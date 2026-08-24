@@ -6,7 +6,9 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -34,5 +36,20 @@ public class GlobalExceptionHandler {
         ex.getBindingResult().getFieldErrors()
                 .forEach(err -> errors.put(err.getField(), err.getDefaultMessage()));
         return ResponseEntity.badRequest().body(errors);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, String>> handleMaxUploadSize(MaxUploadSizeExceededException ex) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(Map.of("error", "File is too large. Max upload size is 100MB."));
+    }
+
+    @ExceptionHandler(IOException.class)
+    public ResponseEntity<Map<String, String>> handleIOException(IOException ex) {
+        // Covers failures talking to Supabase Storage (network issue, bad
+        // credentials, bucket misconfigured, etc). We don't leak ex.getMessage()
+        // here since it may contain internal details - just a safe generic message.
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "File storage operation failed. Please try again."));
     }
 }
