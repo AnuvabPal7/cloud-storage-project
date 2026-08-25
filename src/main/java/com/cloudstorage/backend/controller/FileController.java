@@ -7,6 +7,7 @@ import com.cloudstorage.backend.model.User;
 import com.cloudstorage.backend.service.FileService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -37,6 +38,22 @@ public class FileController {
     @GetMapping
     public ResponseEntity<List<FileResponse>> listFiles(@AuthenticationPrincipal User owner) {
         return ResponseEntity.ok(fileService.listRootFiles(owner));
+    }
+
+    // Global search across all of the user's files, regardless of folder -
+    // same idea as the Google Drive search bar. All params are optional:
+    // /api/files/search with no query returns everything, paginated -
+    // handy as a "browse by type" filter when combined with just mimeType.
+    @GetMapping("/search")
+    public ResponseEntity<Page<FileResponse>> search(
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false) String mimeType,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir,
+            @AuthenticationPrincipal User owner) {
+        return ResponseEntity.ok(fileService.search(query, mimeType, page, size, sortBy, sortDir, owner));
     }
 
     // Returns metadata + a time-limited signed download URL (not the raw

@@ -14,7 +14,15 @@ import java.util.UUID;
  * mistake to make and a confusing one to debug if the wrong import sneaks in.
  */
 @Entity
-@Table(name = "files")
+@Table(name = "files", indexes = {
+        // Speeds up "all of this user's files" - the base filter on nearly every query.
+        @Index(name = "idx_files_owner", columnList = "owner_id"),
+        // Speeds up "this user's non-trashed files" and "this user's trash" -
+        // exactly the two queries listRootFiles() and listTrash() run.
+        @Index(name = "idx_files_owner_deleted", columnList = "owner_id, deleted"),
+        // Speeds up "what's in this specific folder".
+        @Index(name = "idx_files_owner_folder", columnList = "owner_id, folder_id")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

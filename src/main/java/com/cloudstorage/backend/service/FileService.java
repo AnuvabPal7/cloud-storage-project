@@ -8,12 +8,17 @@ import com.cloudstorage.backend.repository.FileRepository;
 import com.cloudstorage.backend.repository.FolderRepository;
 import com.cloudstorage.backend.storage.StorageService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -21,6 +26,13 @@ import java.util.UUID;
 public class FileService {
 
     private static final int SIGNED_URL_EXPIRY_SECONDS = 3600; // 1 hour
+
+    // Allow-list of columns the client is allowed to sort by. Without this,
+    // passing sortBy straight into Sort.by() lets a client probe for valid
+    // entity property names via error messages, and any typo would 500
+    // instead of just quietly falling back to a sane default.
+    private static final Set<String> SORTABLE_FIELDS = Set.of("name", "size", "createdAt");
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final FileRepository fileRepository;
     private final FolderRepository folderRepository;
@@ -140,6 +152,30 @@ public class FileService {
                 .stream()
                 .map(file -> toResponse(file, null))
                 .toList();
+    }
+
+    /**
+     * Global search across all of the user's non-trashed files - both
+     * `query` (matched against the filename) and `mimeType` are optional,
+     * so this doubles as a "browse by type" filter when query is left out.
+     */
+    @Transactional(readOnly = true)
+    public Page<FileResponse> search(String query, String mimeType, int page, int size,
+                                      String sortBy, String sortDir, User owner) {
+        String safeSortBy = SORTABLE_FIELDS.contains(sortBy) ? sortBy : "createdAt";
+        Sort.Direction direction = "asc".equalsIgnoreCase(sortDir) ? Sort.Direction.ASC : Sort.Direction.DESC;
+
+        // Guard against a client requesting page=-1 or size=10000 - keeps
+        // every request cheap regardless of what gets passed in.
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by(direction, safeSortBy));
+
+        String normalizedQuery = (query != null && !query.isBlank()) ? query.trim() : null;
+        String normalizedMimeType = (mimeType != null && !mimeType.isBlank()) ? mimeType.trim() : null;
+
+        return fileRepository.search(owner, normalizedQuery, normalizedMimeType, pageable)
+                .map(file -> toResponse(file, null));
     }
 
     /**

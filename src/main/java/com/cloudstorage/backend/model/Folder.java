@@ -10,12 +10,16 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Minimal stub for now - just enough for File to reference a folder.
- * Full folder CRUD (create/rename/move/nested hierarchy) comes on Day 4.
- * A null folder on a File means "lives at the root" (My Drive top level).
+ * File organization - built out fully on Day 4 (create, rename, delete,
+ * nested hierarchy). A null folder on a File means "lives at the root"
+ * (My Drive top level).
  */
 @Entity
-@Table(name = "folders")
+@Table(name = "folders", indexes = {
+        @Index(name = "idx_folders_owner", columnList = "owner_id"),
+        // Speeds up "list this folder's subfolders" - what getContents() runs.
+        @Index(name = "idx_folders_owner_parent", columnList = "owner_id, parent_id")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
