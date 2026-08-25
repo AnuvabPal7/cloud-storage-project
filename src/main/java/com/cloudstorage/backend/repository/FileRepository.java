@@ -1,6 +1,7 @@
 package com.cloudstorage.backend.repository;
 
 import com.cloudstorage.backend.model.FileItem;
+import com.cloudstorage.backend.model.Folder;
 import com.cloudstorage.backend.model.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -16,4 +17,11 @@ public interface FileRepository extends JpaRepository<FileItem, UUID> {
     Optional<FileItem> findByIdAndOwner(UUID id, User owner);
 
     List<FileItem> findAllByOwnerAndFolderIsNullAndDeletedFalseOrderByCreatedAtDesc(User owner);
+
+    List<FileItem> findAllByOwnerAndFolderAndDeletedFalseOrderByCreatedAtDesc(User owner, Folder folder);
+
+    List<FileItem> findAllByOwnerAndDeletedTrueOrderByCreatedAtDesc(User owner);
+
+    // Used to block deleting a folder that still has files in it.
+    boolean existsByFolder(Folder folder);
 }

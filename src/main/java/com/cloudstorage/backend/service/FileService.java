@@ -2,11 +2,14 @@ package com.cloudstorage.backend.service;
 
 import com.cloudstorage.backend.dto.FileResponse;
 import com.cloudstorage.backend.model.FileItem;
+import com.cloudstorage.backend.model.Folder;
 import com.cloudstorage.backend.model.User;
 import com.cloudstorage.backend.repository.FileRepository;
+import com.cloudstorage.backend.repository.FolderRepository;
 import com.cloudstorage.backend.storage.StorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -20,11 +23,19 @@ public class FileService {
     private static final int SIGNED_URL_EXPIRY_SECONDS = 3600; // 1 hour
 
     private final FileRepository fileRepository;
+    private final FolderRepository folderRepository;
     private final StorageService storageService;
 
-    public FileResponse upload(MultipartFile multipartFile, User owner) throws IOException {
+    @Transactional
+    public FileResponse upload(MultipartFile multipartFile, UUID folderId, User owner) throws IOException {
         if (multipartFile.isEmpty()) {
             throw new IllegalArgumentException("Cannot upload an empty file");
+        }
+
+        Folder folder = null;
+        if (folderId != null) {
+            folder = folderRepository.findByIdAndOwner(folderId, owner)
+                    .orElseThrow(() -> new IllegalArgumentException("Folder not found"));
         }
 
         String safeName = sanitizeFilename(multipartFile.getOriginalFilename());
@@ -43,7 +54,7 @@ public class FileService {
 
         FileItem file = FileItem.builder()
                 .owner(owner)
-                .folder(null) // root level for now - Day 4 adds folder targeting
+                .folder(folder) // null = root level
                 .name(safeName)
                 .storagePath(storagePath)
                 .size(multipartFile.getSize())
@@ -55,6 +66,7 @@ public class FileService {
         return toResponse(file, null);
     }
 
+    @Transactional(readOnly = true)
     public List<FileResponse> listRootFiles(User owner) {
         return fileRepository.findAllByOwnerAndFolderIsNullAndDeletedFalseOrderByCreatedAtDesc(owner)
                 .stream()
@@ -62,12 +74,91 @@ public class FileService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public FileResponse getWithDownloadUrl(UUID fileId, User owner) throws IOException {
         FileItem file = fileRepository.findByIdAndOwner(fileId, owner)
                 .orElseThrow(() -> new IllegalArgumentException("File not found"));
 
         String signedUrl = storageService.createSignedUrl(file.getStoragePath(), SIGNED_URL_EXPIRY_SECONDS);
         return toResponse(file, signedUrl);
+    }
+
+    @Transactional
+    public FileResponse rename(UUID fileId, String newName, User owner) {
+        FileItem file = fileRepository.findByIdAndOwner(fileId, owner)
+                .orElseThrow(() -> new IllegalArgumentException("File not found"));
+        file.setName(newName);
+        fileRepository.save(file);
+        return toResponse(file, null);
+    }
+
+    /**
+     * Moves a file between folders. Only changes the database record -
+     * the file's actual bytes in Supabase Storage never move, since
+     * "folder" here is purely an organizational concept in our schema,
+     * not a real directory in the storage bucket.
+     */
+    @Transactional
+    public FileResponse move(UUID fileId, UUID targetFolderId, User owner) {
+        FileItem file = fileRepository.findByIdAndOwner(fileId, owner)
+                .orElseThrow(() -> new IllegalArgumentException("File not found"));
+
+        Folder targetFolder = null;
+        if (targetFolderId != null) {
+            targetFolder = folderRepository.findByIdAndOwner(targetFolderId, owner)
+                    .orElseThrow(() -> new IllegalArgumentException("Target folder not found"));
+        }
+
+        file.setFolder(targetFolder); // null = move to root
+        fileRepository.save(file);
+        return toResponse(file, null);
+    }
+
+    // Soft delete: just flips a flag. The file stays in Supabase Storage
+    // and in the database - nothing is actually destroyed yet. This is
+    // what makes Trash/restore possible at all.
+    @Transactional
+    public void softDelete(UUID fileId, User owner) {
+        FileItem file = fileRepository.findByIdAndOwner(fileId, owner)
+                .orElseThrow(() -> new IllegalArgumentException("File not found"));
+        file.setDeleted(true);
+        fileRepository.save(file);
+    }
+
+    @Transactional
+    public FileResponse restore(UUID fileId, User owner) {
+        FileItem file = fileRepository.findByIdAndOwner(fileId, owner)
+                .orElseThrow(() -> new IllegalArgumentException("File not found"));
+        file.setDeleted(false);
+        fileRepository.save(file);
+        return toResponse(file, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<FileResponse> listTrash(User owner) {
+        return fileRepository.findAllByOwnerAndDeletedTrueOrderByCreatedAtDesc(owner)
+                .stream()
+                .map(file -> toResponse(file, null))
+                .toList();
+    }
+
+    /**
+     * Actually deletes the file - from storage AND the database. Only
+     * allowed on files already in Trash, so there's always a two-step
+     * "soft delete, then permanently delete" path rather than one click
+     * being able to destroy something unrecoverably by accident.
+     */
+    @Transactional
+    public void permanentlyDelete(UUID fileId, User owner) throws IOException {
+        FileItem file = fileRepository.findByIdAndOwner(fileId, owner)
+                .orElseThrow(() -> new IllegalArgumentException("File not found"));
+
+        if (!file.isDeleted()) {
+            throw new IllegalArgumentException("Move the file to Trash before permanently deleting it");
+        }
+
+        storageService.delete(file.getStoragePath());
+        fileRepository.delete(file);
     }
 
     private FileResponse toResponse(FileItem file, String downloadUrl) {
