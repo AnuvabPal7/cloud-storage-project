@@ -50,7 +50,7 @@ public interface FileRepository extends JpaRepository<FileItem, UUID> {
               AND (:mimeType IS NULL OR f.mimeType LIKE CONCAT(CAST(:mimeType AS string), '%'))
             """)
     Page<FileItem> search(@Param("owner") User owner,
-                          @Param("query") String query,
-                          @Param("mimeType") String mimeType,
-                          Pageable pageable);
+                           @Param("query") String query,
+                           @Param("mimeType") String mimeType,
+                           Pageable pageable);
 }

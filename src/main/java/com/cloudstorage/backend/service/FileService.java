@@ -5,6 +5,7 @@ import com.cloudstorage.backend.model.FileItem;
 import com.cloudstorage.backend.model.Folder;
 import com.cloudstorage.backend.model.User;
 import com.cloudstorage.backend.repository.FileRepository;
+import com.cloudstorage.backend.repository.FileShareRepository;
 import com.cloudstorage.backend.repository.FolderRepository;
 import com.cloudstorage.backend.storage.StorageService;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +37,7 @@ public class FileService {
 
     private final FileRepository fileRepository;
     private final FolderRepository folderRepository;
+    private final FileShareRepository fileShareRepository;
     private final StorageService storageService;
 
     @Transactional
@@ -90,6 +92,32 @@ public class FileService {
     public FileResponse getWithDownloadUrl(UUID fileId, User owner) throws IOException {
         FileItem file = fileRepository.findByIdAndOwner(fileId, owner)
                 .orElseThrow(() -> new IllegalArgumentException("File not found"));
+
+        String signedUrl = storageService.createSignedUrl(file.getStoragePath(), SIGNED_URL_EXPIRY_SECONDS);
+        return toResponse(file, signedUrl);
+    }
+
+    /**
+     * Like getWithDownloadUrl, but also allows access if the requesting
+     * user isn't the owner but has a FileShare on this file (Day 5). This
+     * is the actual "permission check" - the gate that decides whether a
+     * Viewer/Editor can get a download link at all.
+     *
+     * Uses the same error message whether the file doesn't exist or the
+     * user just lacks access, so the response can't be used to tell those
+     * two cases apart - a small but genuine security-conscious choice.
+     */
+    @Transactional(readOnly = true)
+    public FileResponse getSharedDownloadUrl(UUID fileId, User requestingUser) throws IOException {
+        FileItem file = fileRepository.findById(fileId).orElse(null);
+
+        boolean isOwner = file != null && file.getOwner().getId().equals(requestingUser.getId());
+        boolean hasShare = file != null && !isOwner
+                && fileShareRepository.findByFileAndSharedWithUser(file, requestingUser).isPresent();
+
+        if (file == null || (!isOwner && !hasShare)) {
+            throw new IllegalArgumentException("File not found or access denied");
+        }
 
         String signedUrl = storageService.createSignedUrl(file.getStoragePath(), SIGNED_URL_EXPIRY_SECONDS);
         return toResponse(file, signedUrl);
