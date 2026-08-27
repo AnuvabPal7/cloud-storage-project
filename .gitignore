@@ -31,3 +31,14 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Frontend (Node / React / Vite) ###
+node_modules/
+frontend/dist/
+frontend/build/
+frontend/.env
+frontend/.env.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
