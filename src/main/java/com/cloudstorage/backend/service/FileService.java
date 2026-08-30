@@ -1,12 +1,15 @@
 package com.cloudstorage.backend.service;
 
 import com.cloudstorage.backend.dto.FileResponse;
+import com.cloudstorage.backend.dto.FolderResponse;
+import com.cloudstorage.backend.dto.SearchResponse;
 import com.cloudstorage.backend.model.FileItem;
 import com.cloudstorage.backend.model.Folder;
 import com.cloudstorage.backend.model.User;
 import com.cloudstorage.backend.repository.FileRepository;
 import com.cloudstorage.backend.repository.FileShareRepository;
 import com.cloudstorage.backend.repository.FolderRepository;
+import com.cloudstorage.backend.repository.PublicShareLinkRepository;
 import com.cloudstorage.backend.storage.StorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -38,6 +41,7 @@ public class FileService {
     private final FileRepository fileRepository;
     private final FolderRepository folderRepository;
     private final FileShareRepository fileShareRepository;
+    private final PublicShareLinkRepository publicShareLinkRepository;
     private final StorageService storageService;
 
     @Transactional
@@ -183,13 +187,14 @@ public class FileService {
     }
 
     /**
-     * Global search across all of the user's non-trashed files - both
-     * `query` (matched against the filename) and `mimeType` are optional,
-     * so this doubles as a "browse by type" filter when query is left out.
+     * Global search across everything in the user's Drive - both files
+     * AND folders, same as typing into Google Drive's search bar. `query`
+     * matches folder/file names; `mimeType` is file-only (folders have no
+     * mime type, so they're returned regardless of that filter).
      */
     @Transactional(readOnly = true)
-    public Page<FileResponse> search(String query, String mimeType, int page, int size,
-                                      String sortBy, String sortDir, User owner) {
+    public SearchResponse search(String query, String mimeType, int page, int size,
+                                  String sortBy, String sortDir, User owner) {
         String safeSortBy = SORTABLE_FIELDS.contains(sortBy) ? sortBy : "createdAt";
         Sort.Direction direction = "asc".equalsIgnoreCase(sortDir) ? Sort.Direction.ASC : Sort.Direction.DESC;
 
@@ -202,8 +207,23 @@ public class FileService {
         String normalizedQuery = (query != null && !query.isBlank()) ? query.trim() : null;
         String normalizedMimeType = (mimeType != null && !mimeType.isBlank()) ? mimeType.trim() : null;
 
-        return fileRepository.search(owner, normalizedQuery, normalizedMimeType, pageable)
+        Page<FileResponse> filePage = fileRepository.search(owner, normalizedQuery, normalizedMimeType, pageable)
                 .map(file -> toResponse(file, null));
+
+        List<FolderResponse> matchingFolders = folderRepository.search(owner, normalizedQuery).stream()
+                .map(this::toFolderResponse)
+                .toList();
+
+        return new SearchResponse(matchingFolders, filePage);
+    }
+
+    private FolderResponse toFolderResponse(Folder folder) {
+        return new FolderResponse(
+                folder.getId(),
+                folder.getName(),
+                folder.getParent() != null ? folder.getParent().getId() : null,
+                folder.getCreatedAt()
+        );
     }
 
     /**
@@ -211,6 +231,13 @@ public class FileService {
      * allowed on files already in Trash, so there's always a two-step
      * "soft delete, then permanently delete" path rather than one click
      * being able to destroy something unrecoverably by accident.
+     *
+     * Also cleans up any FileShare/PublicShareLink rows pointing at this
+     * file first. Without this, deleting a file that's still shared with
+     * someone (or has an active public link) hits a foreign key constraint
+     * at the database level and fails with a raw 500 - those rows have no
+     * meaning once the file itself is gone, so clearing them is correct,
+     * not just a workaround.
      */
     @Transactional
     public void permanentlyDelete(UUID fileId, User owner) throws IOException {
@@ -220,6 +247,9 @@ public class FileService {
         if (!file.isDeleted()) {
             throw new IllegalArgumentException("Move the file to Trash before permanently deleting it");
         }
+
+        fileShareRepository.deleteAllByFile(file);
+        publicShareLinkRepository.deleteAllByFile(file);
 
         storageService.delete(file.getStoragePath());
         fileRepository.delete(file);

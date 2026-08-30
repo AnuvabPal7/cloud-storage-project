@@ -18,4 +18,8 @@ public interface FileShareRepository extends JpaRepository<FileShare, UUID> {
     List<FileShare> findAllByFile(FileItem file);
 
     List<FileShare> findAllBySharedWithUserOrderByCreatedAtDesc(User sharedWithUser);
+
+    // Used when permanently deleting a file - clears any shares pointing
+    // at it first, so the delete doesn't fail on a foreign key constraint.
+    void deleteAllByFile(FileItem file);
 }

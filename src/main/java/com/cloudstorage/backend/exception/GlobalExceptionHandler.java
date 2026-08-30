@@ -41,7 +41,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, String>> handleMaxUploadSize(MaxUploadSizeExceededException ex) {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
-                .body(Map.of("error", "File is too large. Max upload size is 100MB."));
+                .body(Map.of("error", "File is too large. Max upload size is 50MB."));
     }
 
     @ExceptionHandler(IOException.class)
@@ -51,5 +51,19 @@ public class GlobalExceptionHandler {
         // here since it may contain internal details - just a safe generic message.
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("error", "File storage operation failed. Please try again."));
+    }
+
+    /**
+     * Catches anything not handled above (e.g. a database constraint
+     * violation) so the client always gets a clean {"error": "..."} JSON
+     * body with a 500, instead of Spring's default error page/shape -
+     * which the frontend's error handling doesn't expect and can't parse
+     * cleanly. This is a safety net, not a substitute for fixing the real
+     * cause of a given exception when one is found.
+     */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, String>> handleUnexpected(Exception ex) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "Something went wrong. Please try again."));
     }
 }

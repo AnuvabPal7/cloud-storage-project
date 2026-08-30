@@ -4,6 +4,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
+import PublicLinkAccess from "./pages/PublicLinkAccess";
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -29,6 +30,9 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+
+      {/* Public - no login required, reachable by anyone with the link */}
+      <Route path="/share/:token" element={<PublicLinkAccess />} />
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

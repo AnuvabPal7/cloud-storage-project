@@ -56,7 +56,12 @@ public class SupabaseStorageService implements StorageService {
                 .DELETE()
                 .build();
 
-        send(request, "delete");
+        // Delete is deliberately idempotent: if Supabase says the object
+        // is already gone (404), that's fine - the caller's actual goal
+        // ("this file shouldn't exist in storage") is already true. Only
+        // treat genuine failures (bad credentials, network issues, etc.)
+        // as errors worth surfacing.
+        sendAllowingNotFound(request, "delete");
     }
 
     @Override
@@ -88,6 +93,31 @@ public class SupabaseStorageService implements StorageService {
                         + response.statusCode() + "): " + response.body());
             }
             return response;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Supabase storage " + action + " was interrupted", e);
+        }
+    }
+
+    private void sendAllowingNotFound(HttpRequest request, String action) throws IOException {
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            // Supabase Storage doesn't actually return a real HTTP 404 for
+            // "object not found" on this endpoint - it returns HTTP 400
+            // with the true error described INSIDE the JSON body instead
+            // (e.g. {"statusCode":"404","code":"NoSuchKey",...}). So we
+            // check the body content for that signal, not just the status
+            // code - confirmed by hitting this exact case in testing.
+            boolean isAlreadyGone = response.body() != null
+                    && (response.body().contains("NoSuchKey") || response.body().contains("\"statusCode\":\"404\""));
+
+            if (response.statusCode() >= 400 && !isAlreadyGone) {
+                throw new IOException("Supabase storage " + action + " failed ("
+                        + response.statusCode() + "): " + response.body());
+            }
+            // Either success, or the object was already gone - both are
+            // fine for a delete, since the caller's goal is already true.
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Supabase storage " + action + " was interrupted", e);

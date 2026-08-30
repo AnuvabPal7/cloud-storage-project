@@ -3,11 +3,11 @@ package com.cloudstorage.backend.controller;
 import com.cloudstorage.backend.dto.FileResponse;
 import com.cloudstorage.backend.dto.MoveFileRequest;
 import com.cloudstorage.backend.dto.RenameRequest;
+import com.cloudstorage.backend.dto.SearchResponse;
 import com.cloudstorage.backend.model.User;
 import com.cloudstorage.backend.service.FileService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -40,12 +40,10 @@ public class FileController {
         return ResponseEntity.ok(fileService.listRootFiles(owner));
     }
 
-    // Global search across all of the user's files, regardless of folder -
-    // same idea as the Google Drive search bar. All params are optional:
-    // /api/files/search with no query returns everything, paginated -
-    // handy as a "browse by type" filter when combined with just mimeType.
+    // Global search across everything in Drive - files AND folders, same
+    // idea as the Google Drive search bar. All params are optional.
     @GetMapping("/search")
-    public ResponseEntity<Page<FileResponse>> search(
+    public ResponseEntity<SearchResponse> search(
             @RequestParam(required = false) String query,
             @RequestParam(required = false) String mimeType,
             @RequestParam(defaultValue = "0") int page,

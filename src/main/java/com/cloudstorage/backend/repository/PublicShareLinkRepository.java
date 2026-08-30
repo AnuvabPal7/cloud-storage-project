@@ -16,4 +16,8 @@ public interface PublicShareLinkRepository extends JpaRepository<PublicShareLink
     Optional<PublicShareLink> findByIdAndFile_Owner(UUID id, User owner);
 
     List<PublicShareLink> findAllByFile(FileItem file);
+
+    // Used when permanently deleting a file - clears any public links
+    // pointing at it first, so the delete doesn't fail on a foreign key constraint.
+    void deleteAllByFile(FileItem file);
 }
