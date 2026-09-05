@@ -3,6 +3,7 @@ package com.cloudstorage.backend.service;
 import com.cloudstorage.backend.dto.FileResponse;
 import com.cloudstorage.backend.dto.FolderResponse;
 import com.cloudstorage.backend.dto.SearchResponse;
+import com.cloudstorage.backend.dto.StorageUsageResponse;
 import com.cloudstorage.backend.model.FileItem;
 import com.cloudstorage.backend.model.Folder;
 import com.cloudstorage.backend.model.User;
@@ -37,6 +38,10 @@ public class FileService {
     // instead of just quietly falling back to a sane default.
     private static final Set<String> SORTABLE_FIELDS = Set.of("name", "size", "createdAt");
     private static final int MAX_PAGE_SIZE = 100;
+
+    // Matches Supabase's free-tier 1GB storage limit - see StorageUsageResponse
+    // for why this is a per-user soft quota, not something Supabase itself enforces per user.
+    private static final long STORAGE_LIMIT_BYTES = 1_073_741_824L; // 1 GB
 
     private final FileRepository fileRepository;
     private final FolderRepository folderRepository;
@@ -224,6 +229,12 @@ public class FileService {
                 folder.getParent() != null ? folder.getParent().getId() : null,
                 folder.getCreatedAt()
         );
+    }
+
+    @Transactional(readOnly = true)
+    public StorageUsageResponse getStorageUsage(User owner) {
+        long usedBytes = fileRepository.sumSizeByOwner(owner);
+        return new StorageUsageResponse(usedBytes, STORAGE_LIMIT_BYTES);
     }
 
     /**

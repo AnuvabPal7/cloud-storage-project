@@ -62,3 +62,11 @@ export async function searchFiles({ query, mimeType, page = 0, size = 20, sortBy
   });
   return response.data;
 }
+
+// Returns { usedBytes, limitBytes } - the limit is a soft, per-user quota
+// the backend defines for display purposes (matches Supabase's free-tier
+// 1GB), not something Supabase itself enforces per user.
+export async function getStorageUsage() {
+  const response = await api.get("/api/files/storage-usage");
+  return response.data;
+}

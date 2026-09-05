@@ -4,6 +4,7 @@ import com.cloudstorage.backend.dto.FileResponse;
 import com.cloudstorage.backend.dto.MoveFileRequest;
 import com.cloudstorage.backend.dto.RenameRequest;
 import com.cloudstorage.backend.dto.SearchResponse;
+import com.cloudstorage.backend.dto.StorageUsageResponse;
 import com.cloudstorage.backend.model.User;
 import com.cloudstorage.backend.service.FileService;
 import jakarta.validation.Valid;
@@ -100,5 +101,10 @@ public class FileController {
                                                    @AuthenticationPrincipal User owner) throws IOException {
         fileService.permanentlyDelete(id, owner);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/storage-usage")
+    public ResponseEntity<StorageUsageResponse> storageUsage(@AuthenticationPrincipal User owner) {
+        return ResponseEntity.ok(fileService.getStorageUsage(owner));
     }
 }

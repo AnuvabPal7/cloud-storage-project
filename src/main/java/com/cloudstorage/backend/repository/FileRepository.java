@@ -53,4 +53,13 @@ public interface FileRepository extends JpaRepository<FileItem, UUID> {
                            @Param("query") String query,
                            @Param("mimeType") String mimeType,
                            Pageable pageable);
+
+    /**
+     * Sums every file this user owns - including trashed ones, since a
+     * soft-deleted file still occupies real space in Supabase Storage
+     * until it's permanently deleted. COALESCE guards against a null
+     * result when the user has zero files (SUM of nothing is null in SQL).
+     */
+    @Query("SELECT COALESCE(SUM(f.size), 0) FROM FileItem f WHERE f.owner = :owner")
+    long sumSizeByOwner(@Param("owner") User owner);
 }
